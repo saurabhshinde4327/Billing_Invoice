@@ -12,6 +12,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 import ast
 from PIL import Image
 from num2words import num2words
+import plotly.express as px
 
 # -------------------------------
 # CONFIG
@@ -327,7 +328,50 @@ elif page == "Dashboard":
         total_invoices = conn.execute(text("SELECT COUNT(*) FROM invoices")).scalar() or 0
         total_revenue = conn.execute(text("SELECT SUM(total) FROM invoices")).scalar() or 0
         avg_invoice = conn.execute(text("SELECT AVG(total) FROM invoices")).scalar() or 0
+
+        df = pd.read_sql("SELECT invoice_number, customer_name, total, created_at FROM invoices ORDER BY created_at", conn)
+
+    # KPIs
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Invoices", total_invoices)
     col2.metric("Total Revenue (₹)", f"{total_revenue:,.2f}")
     col3.metric("Average Invoice (₹)", f"{avg_invoice:,.2f}")
+
+    if not df.empty:
+        df['created_at'] = pd.to_datetime(df['created_at'])
+        df['date'] = df['created_at'].dt.date
+
+        # 🎯 Graph selection
+        graph_options = ["Daily Revenue Trend", "Top Customers", "Revenue Share (Pie)", "Monthly Revenue"]
+        selected_graphs = st.multiselect("Select Graphs to Display", graph_options, default=graph_options[:2])
+
+        if "Daily Revenue Trend" in selected_graphs:
+            st.markdown("📊 Revenue Over Time")
+            revenue_over_time = df.groupby('date')['total'].sum().reset_index()
+            fig_line = px.line(revenue_over_time, x='date', y='total',
+                               title="Daily Revenue", markers=True)
+            st.plotly_chart(fig_line, use_container_width=True)
+
+        if "Top Customers" in selected_graphs:
+            st.markdown("📊 Revenue by Customer (Top 10)")
+            top_customers = df.groupby('customer_name')['total'].sum().nlargest(10).reset_index()
+            fig_bar = px.bar(top_customers, x='customer_name', y='total',
+                             title="Top Customers", text_auto='.2s')
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        if "Revenue Share (Pie)" in selected_graphs:
+            st.markdown("📊 Invoice Distribution")
+            fig_pie = px.pie(df, names='customer_name', values='total',
+                             title="Revenue Share by Customer")
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        if "Monthly Revenue" in selected_graphs:
+            st.markdown("📊 Monthly Revenue")
+            df['month'] = df['created_at'].dt.to_period('M').astype(str)
+            monthly_revenue = df.groupby('month')['total'].sum().reset_index()
+            fig_month = px.bar(monthly_revenue, x='month', y='total',
+                               title="Revenue per Month", text_auto='.2s')
+            st.plotly_chart(fig_month, use_container_width=True)
+
+    else:
+        st.info("No invoices available to display graphs.")
