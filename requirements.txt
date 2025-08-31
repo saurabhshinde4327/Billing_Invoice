@@ -4,3 +4,4 @@ pandas
 reportlab
 python-dotenv
 pymysql
+num2words
