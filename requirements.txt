@@ -3,3 +3,4 @@ sqlalchemy
 pandas
 reportlab
 python-dotenv
+pymysql
