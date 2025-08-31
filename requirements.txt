@@ -6,3 +6,4 @@ python-dotenv
 pymysql
 num2words
 streamlit-autorefresh
+plotly
