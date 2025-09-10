@@ -1,4 +1,3 @@
-# pdf_gen.py
 import datetime
 import os
 from io import BytesIO
@@ -6,14 +5,17 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
 )
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.utils import ImageReader
 
+# --------------------------
 # Font Registration
+# --------------------------
 def register_fonts():
     try:
         pdfmetrics.registerFont(TTFont("Inter-Regular", "Inter-Regular.ttf"))
@@ -24,45 +26,35 @@ def register_fonts():
 
 FONTS = register_fonts()
 
+# --------------------------
 # Color Scheme
+# --------------------------
 class InvoiceColors:
     PRIMARY = colors.HexColor("#2D3748")
     BORDER = colors.HexColor("#E2E8F0")
     TEXT = colors.HexColor("#2D3748")
     WHITE = colors.white
 
+# --------------------------
 # Styles
+# --------------------------
 class ModernStyles:
     @staticmethod
     def get_styles():
         styles = {}
-        styles['invoice_title'] = ParagraphStyle(
-            'invoice_title', fontName=FONTS['bold'], fontSize=18, leading=22,
-            textColor=InvoiceColors.PRIMARY, alignment=TA_CENTER)
-        styles['company_name'] = ParagraphStyle(
-            'company_name', fontName=FONTS['bold'], fontSize=20, leading=24,
-            textColor=InvoiceColors.PRIMARY, alignment=TA_LEFT)
-        styles['company_tagline'] = ParagraphStyle(
-            'company_tagline', fontName=FONTS['bold'], fontSize=12, leading=14,
-            textColor=InvoiceColors.PRIMARY, alignment=TA_LEFT)
-        styles['doc_info'] = ParagraphStyle(
-            'doc_info', fontName=FONTS['regular'], fontSize=10, leading=12,
-            textColor=InvoiceColors.TEXT, alignment=TA_RIGHT)
-        styles['invoice_to'] = ParagraphStyle(
-            'invoice_to', fontName=FONTS['regular'], fontSize=11, leading=14,
-            textColor=InvoiceColors.TEXT)
-        styles['normal'] = ParagraphStyle(
-            'normal', fontName=FONTS['regular'], fontSize=10, leading=12,
-            textColor=InvoiceColors.TEXT)
-        styles['bold'] = ParagraphStyle(
-            'bold', fontName=FONTS['bold'], fontSize=10, leading=12,
-            textColor=InvoiceColors.TEXT)
-        styles['terms'] = ParagraphStyle(
-            'terms', fontName=FONTS['regular'], fontSize=10, leading=13,
-            textColor=InvoiceColors.TEXT)
+        styles['invoice_title'] = ParagraphStyle('invoice_title', fontName=FONTS['bold'], fontSize=18, leading=22, textColor=InvoiceColors.PRIMARY, alignment=TA_CENTER)
+        styles['company_name'] = ParagraphStyle('company_name', fontName=FONTS['bold'], fontSize=20, leading=24, textColor=InvoiceColors.PRIMARY, alignment=TA_LEFT)
+        styles['company_tagline'] = ParagraphStyle('company_tagline', fontName=FONTS['bold'], fontSize=12, leading=14, textColor=InvoiceColors.PRIMARY, alignment=TA_LEFT)
+        styles['doc_info'] = ParagraphStyle('doc_info', fontName=FONTS['regular'], fontSize=10, leading=12, textColor=InvoiceColors.TEXT, alignment=TA_RIGHT)
+        styles['To,'] = ParagraphStyle('To,', fontName=FONTS['regular'], fontSize=11, leading=14, textColor=InvoiceColors.TEXT)
+        styles['normal'] = ParagraphStyle('normal', fontName=FONTS['regular'], fontSize=10, leading=12, textColor=InvoiceColors.TEXT)
+        styles['bold'] = ParagraphStyle('bold', fontName=FONTS['bold'], fontSize=10, leading=12, textColor=InvoiceColors.TEXT)
+        styles['terms'] = ParagraphStyle('terms', fontName=FONTS['regular'], fontSize=10, leading=13, textColor=InvoiceColors.TEXT)
         return styles
 
+# --------------------------
 # Number to Words
+# --------------------------
 def number_to_words(amount):
     def convert_hundreds(num):
         ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
@@ -81,7 +73,8 @@ def number_to_words(amount):
             result += ones[num]
         return result.strip()
 
-    if amount == 0: return "Zero Rupees Only"
+    if amount == 0:
+        return "Zero Rupees Only"
     rupees = int(amount)
     paise = int(round((amount - rupees) * 100))
     result = ""
@@ -107,7 +100,9 @@ def number_to_words(amount):
     result += " only"
     return result.strip().title()
 
+# --------------------------
 # Logo Handler
+# --------------------------
 def add_logo(logo_path, max_width=80, max_height=80):
     try:
         if os.path.exists(logo_path):
@@ -120,142 +115,153 @@ def add_logo(logo_path, max_width=80, max_height=80):
         print(f"Could not load logo: {e}")
     return None
 
+# --------------------------
+# Watermark
+# --------------------------
+def watermark(canvas_obj, doc, logo_path):
+    if os.path.exists(logo_path):
+        try:
+            img = ImageReader(logo_path)
+            page_width, page_height = A4
+            img_width, img_height = 200, 200
+            x = (page_width - img_width) / 2
+            y = (page_height - img_height) / 2
+            canvas_obj.saveState()
+            canvas_obj.setFillAlpha(0.1)
+            canvas_obj.drawImage(img, x, y, width=img_width, height=img_height, mask='auto')
+            canvas_obj.restoreState()
+        except Exception as e:
+            print(f"Watermark error: {e}")
+
+# --------------------------
 # PDF Generator
+# --------------------------
 def generate_simple_invoice_pdf(values: dict, items: list):
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4,
-                            leftMargin=20*mm, rightMargin=20*mm,
-                            topMargin=20*mm, bottomMargin=20*mm)
+    logo_path = values.get('logo_path', 'Logo.jpg')
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20*mm, rightMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
     story = []
     styles = ModernStyles.get_styles()
 
-    # Invoice Title
+    # Title
     story.append(Paragraph("INVOICE", styles['invoice_title']))
     story.append(Spacer(1, 10))
 
-    # Company Logo & Name
+    # Logo + Company
     company_name = values.get('company_name', 'Data Center')
-    company_tagline = "Yashavantrao Chavan Institute of Science"
-    logo = add_logo(values.get('logo_path', 'Logo.jpg'))
+    company_tagline = "Yashavantrao Chavan Institute of Science, Satara."
+    logo = add_logo(logo_path)
     if logo:
-        header_table = Table([
-            [logo, Spacer(1,5), Paragraph(f"<b>{company_name}</b><br/>{company_tagline}", styles['company_tagline'])]
-        ], colWidths=[80, 10, 350])
-        header_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+        header_table = Table([[logo, Spacer(1,5), Paragraph(f"<b>{company_name}</b><br/>{company_tagline}", styles['company_tagline'])]], colWidths=[80,10,350])
+        header_table.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
         story.append(header_table)
     else:
         story.append(Paragraph(f"<b>{company_name}</b>", styles['company_name']))
         story.append(Paragraph(company_tagline, styles['company_tagline']))
     story.append(Spacer(1, 10))
 
-    # Invoice # and Date (right aligned, date separate line)
-    doc_number = values.get('doc_number', 'INV-001')
+    # Invoice info
+    doc_number = values.get('doc_number','INV-001')
     doc_date = values.get('doc_date', datetime.datetime.now().strftime('%d/%m/%Y'))
-    invoice_info_table = Table([
-        ['', Paragraph(f"<b>Invoice #:</b> {doc_number}<br/><b>Date:</b> {doc_date}", styles['doc_info'])]
-    ], colWidths=[350, 120])
-    invoice_info_table.setStyle(TableStyle([
-        ('ALIGN', (1,0), (1,0), 'RIGHT'),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('LEFTPADDING', (1,0), (1,0), 0),
-        ('RIGHTPADDING', (1,0), (1,0), 0)
-    ]))
-    story.append(invoice_info_table)
+    invoice_info = Table([['', Paragraph(f"<b>Invoice #:</b> {doc_number}<br/><b>Date:</b> {doc_date}", styles['doc_info'])]], colWidths=[350,120])
+    invoice_info.setStyle(TableStyle([('ALIGN',(1,0),(1,0),'RIGHT')]))
+    story.append(invoice_info)
     story.append(Spacer(1, 15))
 
     # Customer Info
-    customer_name = values.get('customer_name', 'Customer Name')
-    customer_address = values.get('customer_address', 'Customer Address')
-    story.append(Paragraph(f"<b>Invoice to:</b><br/><b>{customer_name}</b><br/>{customer_address}", styles['invoice_to']))
+    customer_name = values.get('customer_name','Customer Name')
+    customer_address = values.get('customer_address','Customer Address')
+    story.append(Paragraph(f"<b>To,</b><br/><b>{customer_name}</b><br/>{customer_address}", styles['To,']))
     story.append(Spacer(1, 15))
 
-    # Items Table
-    table_data = [["No", "Item Description", "Qty", "Price", "Total"]]
+    # Items
+    table_data = [["No","Item Description","Qty","Price","Total"]]
     subtotal = 0
-    for i, (desc, qty, rate) in enumerate(items, start=1):
-        total = qty * rate
+    for i,(desc,qty,rate) in enumerate(items,start=1):
+        total = qty*rate
         subtotal += total
         table_data.append([str(i), Paragraph(desc, styles['normal']), f"{qty:g}", f"{rate:,.2f}", f"{total:,.2f}"])
+    table = Table(table_data,colWidths=[30,220,40,70,90],repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),InvoiceColors.PRIMARY),
+        ('TEXTCOLOR',(0,0),(-1,0),InvoiceColors.WHITE),
 
-    items_table = Table(table_data, colWidths=[30, 220, 40, 70, 90], repeatRows=1)
-    items_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), InvoiceColors.PRIMARY),
-        ('TEXTCOLOR', (0,0), (-1,0), InvoiceColors.WHITE),
-        ('ALIGN', (0,0), (0,-1), 'CENTER'),
-        ('ALIGN', (1,0), (1,-1), 'LEFT'),
-        ('ALIGN', (2,0), (2,-1), 'CENTER'),
-        ('ALIGN', (3,0), (4,-1), 'RIGHT'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BOX', (0,0), (-1,-1), 1, InvoiceColors.BORDER),
-        ('INNERGRID', (0,0), (-1,-1), 0.5, InvoiceColors.BORDER),
+        # Alignments
+        ('ALIGN',(0,0),(0,-1),'CENTER'),   # Sr No
+        ('ALIGN',(1,0),(1,-1),'LEFT'),     # Item Description
+        ('ALIGN',(2,0),(2,-1),'CENTER'),   # Qty
+        ('ALIGN',(3,0),(3,-1),'CENTER'),   # Price
+        ('ALIGN',(4,0),(4,-1),'CENTER'),   # Total
+
+        # Vertical alignment fix
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+
+        # Borders
+        ('BOX',(0,0),(-1,-1),1,InvoiceColors.BORDER),
+        ('INNERGRID',(0,0),(-1,-1),0.5,InvoiceColors.BORDER),
     ]))
-    story.append(items_table)
+    story.append(table)
     story.append(Spacer(1, 15))
 
     # Totals
-    cgst = float(values.get('cgst_rate', 0))
-    sgst = float(values.get('sgst_rate', 0))
-    discount = float(values.get('discount', 0))
-    cgst_amt = subtotal * cgst / 100
-    sgst_amt = subtotal * sgst / 100
-    total_tax = cgst_amt + sgst_amt
-    grand_total = subtotal + total_tax - discount
+    cgst = float(values.get('cgst_rate',0))
+    sgst = float(values.get('sgst_rate',0))
+    discount = float(values.get('discount',0))
+    cgst_amt = subtotal*cgst/100
+    sgst_amt = subtotal*sgst/100
+    total_tax = cgst_amt+sgst_amt
+    grand_total = subtotal+total_tax-discount
 
-    totals_data = [["Sub Total", f"{subtotal:,.2f}"]]
-    if cgst>0: totals_data.append([f"CGST @ {cgst}%", f"{cgst_amt:,.2f}"])
-    if sgst>0: totals_data.append([f"SGST @ {sgst}%", f"{sgst_amt:,.2f}"])
-    if discount>0: totals_data.append(["Discount", f"- {discount:,.2f}"])
-    totals_data.extend([["Tax", f"{total_tax:,.2f}"], ["TOTAL", f"{grand_total:,.2f}"]])
-
-    totals_table = Table(totals_data, colWidths=[120,90], hAlign='RIGHT')
+    totals=[["Sub Total",f"{subtotal:,.2f}"]]
+    if cgst>0: totals.append([f"CGST @ {cgst}%",f"{cgst_amt:,.2f}"])
+    if sgst>0: totals.append([f"SGST @ {sgst}%",f"{sgst_amt:,.2f}"])
+    if discount>0: totals.append(["Discount",f"- {discount:,.2f}"])
+    totals.extend([["Tax",f"{total_tax:,.2f}"],["TOTAL",f"{grand_total:,.2f}"]])
+    totals_table=Table(totals,colWidths=[120,90],hAlign='RIGHT')
     totals_table.setStyle(TableStyle([
-        ('ALIGN', (0,0), (0,-1), 'LEFT'),
-        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
-        ('FONTNAME', (0,-1), (-1,-1), FONTS['bold']),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
-        ('BOX', (0,0), (-1,-1), 1, InvoiceColors.BORDER),
-        ('INNERGRID', (0,0), (-1,-2), 0.5, InvoiceColors.BORDER),
+        ('ALIGN',(0,0),(0,-1),'LEFT'),
+        ('ALIGN',(1,0),(1,-1),'RIGHT'),
+        ('FONTNAME',(0,-1),(-1,-1),FONTS['bold']),
+        ('BOX',(0,0),(-1,-1),1,InvoiceColors.BORDER),
+        ('INNERGRID',(0,0),(-1,-2),0.5,InvoiceColors.BORDER),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),   # Vertical align totals table too
     ]))
     story.append(totals_table)
     story.append(Spacer(1, 10))
 
     # Amount in words
     story.append(Paragraph(f"<b>Amount in Words:</b> {number_to_words(grand_total)}", styles['bold']))
-    story.append(Spacer(1, 10))
+    story.append(PageBreak())
 
-    # Terms
+    # Terms on new page
     terms_text = """
     <b>Terms and Conditions:</b><br/>
-    1. Validity: Quotation valid for 30 days.<br/>
-    2. Service Duration: 12 months from date of activation.<br/>
-    3. Support Includes: Regular updates, monitoring and priority issue resolution.
+•	These terms remain binding unless otherwise agreed in writing under a Service Level Agreement (SLA) or other executed agreement.<br/>
+•	Payments must be made within the agreed terms from the invoice date.<br/>
+•	Delayed payments will attract interest at 2% per month until realization.<br/>
+•	Back-to-back payment terms are acceptable only if mutually agreed in writing.<br/>
+•	All payments shall be made in Indian Rupees (INR) in favor of YCIS Data Center.<br/>
+•	Any dispute regarding invoice amount, services, or products must be raised in writing within 7 days of receipt.<br/>
+•	No claims will be entertained after this period.<br/>
+•	If a Proforma Invoice is issued, it will automatically convert into a Tax Invoice and be binding if no objection is raised within 7 days of receipt.<br/>
+•	Services may be suspended, discontinued, or terminated in case of non-payment.<br/>
+•	Suspension or termination of services due to non-payment shall not be considered a breach of SLA.<br/>
+•	Suspended services will resume only after full settlement of all outstanding dues.<br/>
+•	YCIS Data Center will not be liable for any loss or damage caused due to service suspension, degradation, termination, or client-side issues.<br/>
+•	Timely payment is essential to ensure uninterrupted services and enables YCIS Data Center to maintain infrastructure and resources.<br/>
+
     """
     story.append(Paragraph(terms_text, styles['terms']))
 
-    doc.build(story)
+    def on_page(c, d):
+        watermark(c,d,logo_path)
+
+    doc.build(story,onFirstPage=on_page,onLaterPages=on_page)
     buffer.seek(0)
     return buffer.getvalue()
 
+# --------------------------
 # Backward Compatibility
-def generate_professional_pdf(values: dict, items: list, doc_type: str = "INVOICE"):
+# --------------------------
+def generate_professional_pdf(values, items, doc_type="INVOICE"):
     return generate_simple_invoice_pdf(values, items)
-
-# Example Test
-if __name__ == "__main__":
-    values = {
-        'company_name': 'Data Center',
-        'doc_number': 'DC0001',
-        'doc_date': '31/08/2025',
-        'customer_name': 'The Secretary',
-        'customer_address': "Rayat Shikshan Sanstha's, Maharashtra, Satara 415002",
-        'cgst_rate': 0.0,
-        'sgst_rate': 0.0,
-        'discount': 0,
-        'logo_path': 'Logo.jpg'
-    }
-    items = [("KVM 1 Hosting Server: 2 vCPU, 4 GB Memory, 50 GB SSD Disk Storage, Security and Backup, Technical Support", 1, 15158.00)]
-
-    pdf_bytes = generate_simple_invoice_pdf(values, items)
-    with open("invoice_no_rupees.pdf", "wb") as f:
-        f.write(pdf_bytes)
-    print("Invoice generated: invoice_no_rupees.pdf")
